@@ -73,9 +73,31 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
     //クライアントからクローズの情報を得たときにするクローズする
     if (header->ctrl_mode == COM_CLOSE_REQ){
         printf("[WAPP] close req:%d\n",curr_session);
-        close_session(cli_session, curr_session, SESSION_MAXN);
-        close_session(ser_session, curr_session, SESSION_MAXN);
-        next_session[curr_session] = -1;
+        int cli = serach_session(cli_session, curr_session, SESSION_MAXN);
+        int ser = serach_session(ser_session, curr_session, SESSION_MAXN);
+        //次の接続先を一時保存
+        int next = next_session(curr_session);
+        //print_all(cli_session, SESSION_MAXN);
+        //clientからクローズリクエストが来た場合
+        if (!cli && !ser) {
+            //すでにクローズ済
+            return SNIC_CLOSE_CONN;
+        }
+        if (cli) {
+            cli_session[cli] = non_session;
+            int x = serach_session(ser_session, next, SESSION_MAXN);
+            ser_session[x] = non_session;
+        }
+        if (ser) {
+            ser_session[ser] = non_session;
+            int x = serach_session(cli_session, next, SESSION_MAXN);
+            cli_session[x] = non_session;
+        }
+        //お互いの関係をリセット
+        next_session[curr_session] = non_session;
+        next_session[next] = non_session;
+        //相方のサーバーにcloseを送信
+        snic_close_server(x);
         return SNIC_CLOSE_CONN;
     }
 
@@ -90,7 +112,7 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
     }
 
     //リクエストの接続先の決定
-    
+
 }
 
 int parse_http(char *payload, http_request *req, int payload_size) {
@@ -159,12 +181,17 @@ int uri_include(char *uri) {
   return x;
 }
 
-void close_session(short arr[], short target, int size) {
+int serach_session(short arr[], short target, int size) {
     for (int i = 0; i <= size; i++) {
         if(arr[i] == target){
-            arr[i] = non_session;
-            return;
+            return i;
         }
     }
-    return;
+    return 0;
+}
+
+void print_list(short arr[], int size) {
+    for (int i = 0; i <= size; i ++) {
+        printf("%d : %d\n", i, arr[i]);
+    }
 }
