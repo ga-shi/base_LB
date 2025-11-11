@@ -1,7 +1,7 @@
 #include "common/spi.h"
 
 //リモートIP定義
-#define REMOTE_TP ("192.168.0.15") //muc0
+#define REMOTE_IP ("192.168.0.15") //muc0
 
 //リモートPort定義
 #define REMOTE_PORT (8000)
@@ -15,7 +15,7 @@
 #define non_session -1
 
 #define BUF_MAXN 2048
-#define SESSION_MAXN (100000)
+#define SESSION_MAXN (1000)
 
 #define SNIC_TO_REMOTE (0)
 #define SNIC_TO_HOST (1)
@@ -70,34 +70,37 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
         .body_len = 0,
     };
 
-    //クライアントからクローズの情報を得たときにするクローズする
+    //クライアントからクローズの情報を得たときにクローズする
     if (header->ctrl_mode == COM_CLOSE_REQ){
         printf("[WAPP] close req:%d\n",curr_session);
-        int cli = serach_session(cli_session, curr_session, SESSION_MAXN);
-        int ser = serach_session(ser_session, curr_session, SESSION_MAXN);
+        //sessionが保存されているか確認
+        int cli = search_session(cli_session, curr_session, SESSION_MAXN);
+        int ser = search_session(ser_session, curr_session, SESSION_MAXN);
         //次の接続先を一時保存
         int next = next_session(curr_session);
         //print_all(cli_session, SESSION_MAXN);
-        //clientからクローズリクエストが来た場合
-        if (!cli && !ser) {
+        //どちらにも保存されていない
+        if (cli < 0 && ser < 0) {
             //すでにクローズ済
             return SNIC_CLOSE_CONN;
         }
-        if (cli) {
+        //cliからのcloseリクエスト
+        if (cli > 0) {
             cli_session[cli] = non_session;
-            int x = serach_session(ser_session, next, SESSION_MAXN);
+            int x = search_session(ser_session, next, SESSION_MAXN);
             ser_session[x] = non_session;
         }
-        if (ser) {
+        //serからのcloseリクエスト
+        if (ser > 0) {
             ser_session[ser] = non_session;
-            int x = serach_session(cli_session, next, SESSION_MAXN);
+            int x = search_session(cli_session, next, SESSION_MAXN);
             cli_session[x] = non_session;
         }
         //お互いの関係をリセット
         next_session[curr_session] = non_session;
         next_session[next] = non_session;
         //相方のサーバーにcloseを送信
-        snic_close_server(x);
+        snic_close_server(next);
         return SNIC_CLOSE_CONN;
     }
 
@@ -112,6 +115,39 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
     }
 
     //リクエストの接続先の決定
+    int search_cli = search_session(cli_session, curr_session, SESSION_MAXN);
+    int search_ser = search_session(ser_session, curr_session, SESSION_MAXN);
+
+    if (search_cli < 0) {
+      //どちらにも登録されていない = クライアント側の初リクエスト
+      if (search_ser < 0){
+        cli_session(curr_session) = curr_session;
+        //バックエンド選択
+        printf("connect Remote!!")
+        dst = snic_connect_server(REMOTE_IP, REMOTE_PORT);
+        printf("connect done!!")
+        ser_session(dst) = dst;
+        next_session(curr_session) = dst;
+        next_session(dst) = curr_session;
+      }
+      //バックエンドからのリクエスト
+      else {
+        dst = next_session(curr_session);
+      }
+    }
+    //クライアントから2回目以降のリクエスト
+    else {
+      //バックエンド選択
+      printf("connect Remote!!")
+      dst = snic_connect_server(REMOTE_IP, REMOTE_PORT);
+      printf("connect done!!")
+      ser_session(dst) = dst;
+      next_session(curr_session) = dst;
+      next_session(dst) = curr_session;
+    }
+    header->sessionID = dst;
+      printf("Relay to remote.\n");
+      return SNIC_TO_REMOTE;
 
 }
 
@@ -181,13 +217,11 @@ int uri_include(char *uri) {
   return x;
 }
 
-int serach_session(short arr[], short target, int size) {
-    for (int i = 0; i <= size; i++) {
-        if(arr[i] == target){
-            return i;
-        }
+int search_session(short arr[], short target, int size) {
+    if(arr[target] == target){
+      return i;
     }
-    return 0;
+    return -1;
 }
 
 void print_list(short arr[], int size) {
