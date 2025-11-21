@@ -118,25 +118,9 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
     int search_cli = search_session(cli_session, curr_session, SESSION_MAXN);
     int search_ser = search_session(ser_session, curr_session, SESSION_MAXN);
 
-    if (search_cli < 0) {
-      //どちらにも登録されていない = クライアント側の初リクエスト
-      if (search_ser < 0){
-        cli_session(curr_session) = curr_session;
-        //バックエンド選択
-        printf("connect Remote!!")
-        dst = snic_connect_server(REMOTE_IP, REMOTE_PORT);
-        printf("connect done!!")
-        ser_session(dst) = dst;
-        next_session(curr_session) = dst;
-        next_session(dst) = curr_session;
-      }
-      //バックエンドからのリクエスト
-      else {
-        dst = next_session(curr_session);
-      }
-    }
-    //クライアントから2回目以降のリクエスト
-    else {
+      //どちらにも登録されていない = クライアント側からのリクエスト
+    if (search_ser < 0){
+      cli_session(curr_session) = curr_session;
       //バックエンド選択
       printf("connect Remote!!")
       dst = snic_connect_server(REMOTE_IP, REMOTE_PORT);
@@ -145,9 +129,25 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
       next_session(curr_session) = dst;
       next_session(dst) = curr_session;
     }
+      //バックエンドからのリクエスト
+    else {
+      dst = next_session(curr_session);
+      //ヘッダーにConnection:closeを付与
+      header_conn_close(req);
+      //バックエンドへクローズを送信
+      snic_close_server(curr_session);
+      //sessionの整理
+      //sessionが保存されているか確認
+      int next = search_session(cli_session, dst, SESSION_MAXN);
+      //sessionの初期化
+      cli_session[next] = non_session;
+      ser_session[search_ser] = non_session;
+      next_session(curr_session) = non_session;
+      next_session(dst) = non_session;
+    }
     header->sessionID = dst;
-      printf("Relay to remote.\n");
-      return SNIC_TO_REMOTE;
+    printf("Relay to remote.\n");
+    return SNIC_TO_REMOTE;
 
 }
 
@@ -228,4 +228,22 @@ void print_list(short arr[], int size) {
     for (int i = 0; i <= size; i ++) {
         printf("%d : %d\n", i, arr[i]);
     }
+}
+
+void header_conn_close(http_request reg) {
+  //header内のconnection部分を探す
+  int flag = 0;
+  for (int i = 0; i < req->header_count; i++) {
+    if (req->header_names[i] == "Connection") {
+      strncpy(req->header_values[i], "close", MAX_HEADER_VALUE);
+      //変更されたことを明示
+      flag = 1;
+      printf("Connection -> close");
+      break;
+    }
+  }
+  //ヘッダー内にConnection:がなければ、ヘッダーの最後に付け足す
+  if (flag == 0){
+    strncpy(req->header_values[req->header_count], "close", MAX_HEADER_VALUE)
+  }
 }
