@@ -82,6 +82,7 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
         //どちらにも保存されていない
         if (cli < 0 && ser < 0) {
             //すでにクローズ済
+            printf("already close done");
             return SNIC_CLOSE_CONN;
         }
         //cliからのcloseリクエスト
@@ -89,18 +90,22 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
             cli_session[cli] = non_session;
             int x = search_session(ser_session, next, SESSION_MAXN);
             ser_session[x] = non_session;
+            printf("session reset from cli");
         }
         //serからのcloseリクエスト
         if (ser > 0) {
             ser_session[ser] = non_session;
             int x = search_session(cli_session, next, SESSION_MAXN);
             cli_session[x] = non_session;
+            printf("session reset from ser");
         }
         //お互いの関係をリセット
         next_session[curr_session] = non_session;
         next_session[next] = non_session;
         //相方のサーバーにcloseを送信
+        printf("close");
         snic_close_server(next);
+        printf("close done");
         return SNIC_CLOSE_CONN;
     }
 
@@ -128,6 +133,7 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
       ser_session(dst) = dst;
       next_session(curr_session) = dst;
       next_session(dst) = curr_session;
+      printf("session reset");
     }
       //バックエンドからのリクエスト
     else {
@@ -135,7 +141,9 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
       //ヘッダーにConnection:closeを付与
       header_conn_close(req);
       //バックエンドへクローズを送信
+      printf("close backend");
       snic_close_server(curr_session);
+      printf("close backend done");
       //sessionの整理
       //sessionが保存されているか確認
       int next = search_session(cli_session, dst, SESSION_MAXN);
@@ -144,6 +152,7 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
       ser_session[search_ser] = non_session;
       next_session(curr_session) = non_session;
       next_session(dst) = non_session;
+      printf("session reset");
     }
     header->sessionID = dst;
     printf("Relay to remote.\n");
