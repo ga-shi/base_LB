@@ -43,7 +43,7 @@ static short ser_session[BUF_MAXN];
 int parse_http(char *payload, http_request *req, int payload_size);
 char *nerd_memcpy(char *dst, char *src, int sz);
 int uri_include(char *req);
-int close_session(short arr[], short target, int size);
+int search_session(short arr[], short target, int size);
 
 int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
     //sessionを保存する配列を-1で初期化
@@ -77,7 +77,7 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
         int cli = search_session(cli_session, curr_session, SESSION_MAXN);
         int ser = search_session(ser_session, curr_session, SESSION_MAXN);
         //次の接続先を一時保存
-        int next = next_session(curr_session);
+        int next = next_session[curr_session];
         //print_all(cli_session, SESSION_MAXN);
         //どちらにも保存されていない
         if (cli < 0 && ser < 0) {
@@ -125,34 +125,19 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
 
       //どちらにも登録されていない = クライアント側からのリクエスト
     if (search_ser < 0){
-      cli_session(curr_session) = curr_session;
+      cli_session[curr_session] = curr_session;
       //バックエンド選択
-      printf("connect Remote!!")
+      printf("connect Remote!!");
       dst = snic_connect_server(REMOTE_IP, REMOTE_PORT);
-      printf("connect done!!")
-      ser_session(dst) = dst;
-      next_session(curr_session) = dst;
-      next_session(dst) = curr_session;
+      printf("connect done!!");
+      ser_session[dst] = dst;
+      next_session[curr_session] = dst;
+      next_session[dst] = curr_session;
       printf("session reset");
     }
       //バックエンドからのリクエスト
     else {
-      dst = next_session(curr_session);
-      //ヘッダーにConnection:closeを付与
-      header_conn_close(req);
-      //バックエンドへクローズを送信
-      printf("close backend");
-      snic_close_server(curr_session);
-      printf("close backend done");
-      //sessionの整理
-      //sessionが保存されているか確認
-      int next = search_session(cli_session, dst, SESSION_MAXN);
-      //sessionの初期化
-      cli_session[next] = non_session;
-      ser_session[search_ser] = non_session;
-      next_session(curr_session) = non_session;
-      next_session(dst) = non_session;
-      printf("session reset");
+      dst = next_session[curr_session];
     }
     header->sessionID = dst;
     printf("Relay to remote.\n");
@@ -228,7 +213,7 @@ int uri_include(char *uri) {
 
 int search_session(short arr[], short target, int size) {
     if(arr[target] == target){
-      return i;
+      return 1;
     }
     return -1;
 }
@@ -239,12 +224,12 @@ void print_list(short arr[], int size) {
     }
 }
 
-void header_conn_close(http_request reg) {
+void header_conn_close(http_request req) {
   //header内のconnection部分を探す
   int flag = 0;
-  for (int i = 0; i < req->header_count; i++) {
-    if (req->header_names[i] == "Connection") {
-      strncpy(req->header_values[i], "close", MAX_HEADER_VALUE);
+  for (int i = 0; i < req.header_count; i++) {
+    if (req.header_names[i] == "Connection") {
+      strncpy(req.header_values[i], "close", MAX_HEADER_VALUE);
       //変更されたことを明示
       flag = 1;
       printf("Connection -> close");
@@ -253,6 +238,6 @@ void header_conn_close(http_request reg) {
   }
   //ヘッダー内にConnection:がなければ、ヘッダーの最後に付け足す
   if (flag == 0){
-    strncpy(req->header_values[req->header_count], "close", MAX_HEADER_VALUE)
+    strncpy(req.header_values[req.header_count], "close", MAX_HEADER_VALUE);
   }
 }
