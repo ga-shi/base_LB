@@ -87,14 +87,14 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
         }
         //cliからのcloseリクエスト
         if (cli_session[curr_session] == curr_session) {
-            cli_session[cli] = non_session;
+            cli_session[curr_session] = non_session;
             //int x = search_session(ser_session, next, SESSION_MAXN);
             ser_session[curr_session] = non_session;
             printf("session reset from cli");
         }
         //serからのcloseリクエスト
         if (ser_session[curr_session] == curr_session) {
-            ser_session[ser] = non_session;
+            ser_session[curr_session] = non_session;
             //int x = search_session(cli_session, next, SESSION_MAXN);
             cli_session[curr_session] = non_session;
             printf("session reset from ser");
