@@ -74,29 +74,29 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
     if (header->ctrl_mode == COM_CLOSE_REQ){
         printf("[WAPP] close req:%d\n",curr_session);
         //sessionが保存されているか確認
-        int cli = search_session(cli_session, curr_session, SESSION_MAXN);
-        int ser = search_session(ser_session, curr_session, SESSION_MAXN);
+        //int cli = search_session(cli_session, curr_session, SESSION_MAXN);
+        //int ser = search_session(ser_session, curr_session, SESSION_MAXN);
         //次の接続先を一時保存
         int next = next_session[curr_session];
         //print_all(cli_session, SESSION_MAXN);
         //どちらにも保存されていない
-        if (cli < 0 && ser < 0) {
+        if (cli_session[curr_session] != curr_session && ser_session[curr_session] != curr_session) {
             //すでにクローズ済
             printf("already close done");
             return SNIC_CLOSE_CONN;
         }
         //cliからのcloseリクエスト
-        if (cli > 0) {
+        if (cli_session[curr_session] == curr_session) {
             cli_session[cli] = non_session;
-            int x = search_session(ser_session, next, SESSION_MAXN);
-            ser_session[x] = non_session;
+            //int x = search_session(ser_session, next, SESSION_MAXN);
+            ser_session[curr_session] = non_session;
             printf("session reset from cli");
         }
         //serからのcloseリクエスト
-        if (ser > 0) {
+        if (ser_session[curr_session] == curr_session) {
             ser_session[ser] = non_session;
-            int x = search_session(cli_session, next, SESSION_MAXN);
-            cli_session[x] = non_session;
+            //int x = search_session(cli_session, next, SESSION_MAXN);
+            cli_session[curr_session] = non_session;
             printf("session reset from ser");
         }
         //お互いの関係をリセット
@@ -120,11 +120,11 @@ int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
     }
 
     //リクエストの接続先の決定
-    int search_cli = search_session(cli_session, curr_session, SESSION_MAXN);
-    int search_ser = search_session(ser_session, curr_session, SESSION_MAXN);
+    //int search_cli = search_session(cli_session, curr_session, SESSION_MAXN);
+    //int search_ser = search_session(ser_session, curr_session, SESSION_MAXN);
 
-      //どちらにも登録されていない = クライアント側からのリクエスト
-    if (search_ser < 0){
+      //ser_sessionに保存されていない = クライアント側からのリクエスト
+    if (ser_session[curr_session] != curr_session){
       cli_session[curr_session] = curr_session;
       //バックエンド選択
       printf("connect Remote!!");
