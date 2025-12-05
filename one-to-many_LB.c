@@ -9,6 +9,10 @@
 //識別uriの決定
 #define IDENTIFY_URI ("test")
 
+#ifdef NOPRINT
+#define printf(format, ...) {}
+#endif
+
 #define MAX_HEADERS 10
 #define MAX_HEADER_NAME 32
 #define MAX_HEADER_VALUE 128
@@ -43,106 +47,165 @@ static short ser_session[BUF_MAXN];
 int parse_http(char *payload, http_request *req, int payload_size);
 char *nerd_memcpy(char *dst, char *src, int sz);
 int uri_include(char *req);
-int search_session(short arr[], short target, int size);
+//int search_session(short arr[], short target, int size);
 
-int spi_hundle(header_t header, char *payload, struct trace_info *trace_info) {
-    //sessionを保存する配列を-1で初期化
-    if(!initialized){
-        for(int i = 0; i <= SESSION_MAXN; i++){
-            next_session[i] = non_session;
-            cli_session[i] = non_session;
-            ser_session[i] = non_session;
-        }
-        initialized = 1;
+int spi_handle(header_t header, char *payload, struct trace_info *trace_info) {
+printf("spi_handle called\n");
+//sessionを保存する配列を-1で初期化
+if(!initialized){
+  for(int i = 0; i <= SESSION_MAXN; i++){
+    next_session[i] = non_session;
+    cli_session[i] = non_session;
+    ser_session[i] = non_session;
+  }
+  initialized = 1;
+}
+
+  //ヘッダーの長さを取得
+  int len = header->appNotification_length;
+  //現在のセッションIDを取得
+  unsigned short curr_session = header->sessionID;
+  short dst = -1;
+  //どこからリクエストが送られているか取得
+  unsigned short from_x86 = header->result_state;
+
+  uint64_t s;
+  uint64_t e;
+  uint64_t c;
+
+  //httpリクエストをパースした内容の保存場所
+  http_request req = {
+    .header_count = 0,
+    .body_len = 0,
+  };
+
+  //printf("ctrl_mode =%d\n", header->ctrl_mode);
+  //クライアントからクローズの情報を得たときにクローズする
+  if (header->ctrl_mode == COM_CLOSE_REQ){
+    //printf("[WAPP] close req:%d\n",curr_session);
+    //sessionが保存されているか確認
+    //int cli = search_session(cli_session, curr_session, SESSION_MAXN);
+    //int ser = search_session(ser_session, curr_session, SESSION_MAXN);
+    //次の接続先を一時保存
+    int next = next_session[curr_session];
+    //print_all(cli_session, SESSION_MAXN);
+    //どちらにも保存されていない
+    if (cli_session[curr_session] != curr_session && ser_session[curr_session] != curr_session) {
+      //すでにクローズ済
+      printf("already close done\n");
+      return SNIC_CLOSE_CONN;
     }
-
-    //ヘッダーの長さを取得
-    int len = header->appNotification_length;
-    //現在のセッションIDを取得
-    unsigned short curr_session = header->sessionID;
-    short dst = -1;
-    //どこからリクエストが送られているか取得
-    unsigned short from_x86 = header->result_state;
-
-    //httpリクエストをパースした内容の保存場所
-    http_request req = {
-        .header_count = 0,
-        .body_len = 0,
-    };
-
-    //クライアントからクローズの情報を得たときにクローズする
-    if (header->ctrl_mode == COM_CLOSE_REQ){
-        printf("[WAPP] close req:%d\n",curr_session);
-        //sessionが保存されているか確認
-        int cli = search_session(cli_session, curr_session, SESSION_MAXN);
-        int ser = search_session(ser_session, curr_session, SESSION_MAXN);
-        //次の接続先を一時保存
-        int next = next_session[curr_session];
-        //print_all(cli_session, SESSION_MAXN);
-        //どちらにも保存されていない
-        if (cli < 0 && ser < 0) {
-            //すでにクローズ済
-            printf("already close done");
-            return SNIC_CLOSE_CONN;
-        }
-        //cliからのcloseリクエスト
-        if (cli > 0) {
-            cli_session[cli] = non_session;
-            int x = search_session(ser_session, next, SESSION_MAXN);
-            ser_session[x] = non_session;
-            printf("session reset from cli");
-        }
-        //serからのcloseリクエスト
-        if (ser > 0) {
-            ser_session[ser] = non_session;
-            int x = search_session(cli_session, next, SESSION_MAXN);
-            cli_session[x] = non_session;
-            printf("session reset from ser");
-        }
-        //お互いの関係をリセット
-        next_session[curr_session] = non_session;
-        next_session[next] = non_session;
-        //相方のサーバーにcloseを送信
-        printf("close");
-        snic_close_server(next);
-        printf("close done");
-        return SNIC_CLOSE_CONN;
+    //cliからのcloseリクエスト
+    if (cli_session[curr_session] == curr_session) {
+      cli_session[curr_session] = non_session;
+      //int x = search_session(ser_session, next, SESSION_MAXN);
+      ser_session[curr_session] = non_session;
+      printf("session reset from cli\n");
     }
-
-    // FIXME: Skippable if payload region full accessible.
-    nerd_memcpy(cbuf, payload, len);
-
-    parse_http(cbuf, &req, len);
-    for (int i = 0; i < req.header_count; i++)
-        if (!strcmp(req.header_names[i], "x-relay")) {
-            //printf("Relay to host.\n");
-            return SNIC_TO_HOST;
+    //serからのcloseリクエスト
+    if (ser_session[curr_session] == curr_session) {
+      ser_session[curr_session] = non_session;
+      //int x = search_session(cli_session, next, SESSION_MAXN);
+      cli_session[curr_session] = non_session;
+      printf("session reset from ser\n");
     }
+    //お互いの関係をリセット
+    next_session[curr_session] = non_session;
+    next_session[next] = non_session;
+    //相方のサーバーにcloseを送信
+    printf("close\n");
+    snic_close_server(next);
+    printf("close done\n");
+    return SNIC_CLOSE_CONN;
+  }
 
-    //リクエストの接続先の決定
-    int search_cli = search_session(cli_session, curr_session, SESSION_MAXN);
-    int search_ser = search_session(ser_session, curr_session, SESSION_MAXN);
-
-      //どちらにも登録されていない = クライアント側からのリクエスト
-    if (search_ser < 0){
-      cli_session[curr_session] = curr_session;
-      //バックエンド選択
-      printf("connect Remote!!");
-      dst = snic_connect_server(REMOTE_IP, REMOTE_PORT);
-      printf("connect done!!");
-      ser_session[dst] = dst;
-      next_session[curr_session] = dst;
-      next_session[dst] = curr_session;
-      printf("session reset");
-    }
-      //バックエンドからのリクエスト
-    else {
-      dst = next_session[curr_session];
-    }
-    header->sessionID = dst;
-    printf("Relay to remote.\n");
+//from_x86 = 1ならばクライアントに繋ぐ
+  //printf("A\n");
+  if (from_x86) {
+    printf("from_x86\n");
     return SNIC_TO_REMOTE;
+  }
+  // FIXME: Skippable if payload region full accessible.
+  //printf("B\n");
+  nerd_memcpy(cbuf, payload, len);
+  printf("%d\n", len);
 
+  //printf("C\n");
+  parse_http(cbuf, &req, len);
+  //printf("E\n");
+
+  for (int i = 0; i < req.header_count; i++) {
+    if (!strcmp(req.header_names[i], "x-relay")) {
+      printf("Relay to host.\n");
+      return SNIC_TO_HOST;
+    }
+  }
+    //リクエストの接続先の決定
+    //int search_cli = search_session(cli_session, curr_session, SESSION_MAXN);
+    //int search_ser = search_session(ser_session, curr_session, SESSION_MAXN);
+
+  //ser_sessionに保存されていない = クライアント側からのリクエスト
+  printf("D\n");
+  if (ser_session[curr_session] != curr_session){
+    cli_session[curr_session] = curr_session;
+    //バックエンド選択
+    printf("connect Remote!!\n");
+    dst = snic_connect_server(REMOTE_IP, REMOTE_PORT);
+    printf("connect done!!\n");
+    ser_session[dst] = dst;
+    next_session[curr_session] = dst;
+    next_session[dst] = curr_session;
+    printf("session associated\n");
+  }
+  //バックエンドからのリクエスト
+  else {
+    dst = next_session[curr_session];
+  }
+  header->sessionID = dst;
+  printf("Relay to remote.\n");
+  return SNIC_TO_REMOTE;
+
+}
+
+size_t strspn(const char *s1, const char *s2) {
+  const char *p = s1;
+
+  for (; *s1; s1++) {
+    const char *t;
+
+    for (t = s2; *t != *s1; t++)
+      if (*t == '\0') return (s1 - p);
+  }
+  return (s1 - p);
+}
+
+size_t strcspn(const char *s1, const char *s2) {
+  const char *p = s1;
+
+  for (; *s1; s1++) {
+    const char *t;
+
+    for (t = s2; *t; t++)
+      if (*t == *s1) return (s1 - p);
+  }
+  return (s1 - p);
+}
+
+char *strtok_r(char *s1, const char *s2, char **saveptr) {
+  char *pbegin, *pend;
+  static char *save = "";
+
+  pbegin = s1 ? s1 : *saveptr;
+  pbegin += strspn(pbegin, s2); /* strspnを利用 */
+  if (*pbegin == '\0') {
+    save = "";
+    return (NULL);
+  }
+  pend = pbegin + strcspn(pbegin, s2); /* strcspnを利用 */
+  if (*pend != '\0') *pend++ = '\0';
+  save = pend;
+  *saveptr = save;
+  return (pbegin);
 }
 
 int parse_http(char *payload, http_request *req, int payload_size) {
@@ -199,6 +262,7 @@ char *nerd_memcpy(char *dst, char *src, int sz) {
   return dst + sz;
 }
 
+
 int uri_include(char *uri) {
   //NULLであれば0、NULLでなければ1を返す
   int x = (strstr(uri, IDENTIFY_URI) != NULL) ? 1 : 0;
@@ -211,12 +275,12 @@ int uri_include(char *uri) {
   return x;
 }
 
-int search_session(short arr[], short target, int size) {
-    if(arr[target] == target){
-      return 1;
-    }
-    return -1;
-}
+// int search_session(short arr[], short target, int size) {
+//     if(arr[target] == target){
+//       return 1;
+//     }
+//     return -1;
+// }
 
 void print_list(short arr[], int size) {
     for (int i = 0; i <= size; i ++) {
