@@ -1,10 +1,19 @@
 #include "common/spi.h"
 
 //リモートIP定義
-#define REMOTE_IP ("192.168.0.15") //muc0
+#define MAX_IP (2)
+#define REMOTE_IP_MUC0 ("192.168.0.15") 
+#define REMOTE_IP_MUC1 ("192.168.0.13")
+#define REMOTE_IP_SERVER0 ("192.168.0.12")
+#define REMOTE_IP_SERVER1 ("192.168.0.11")
+
 
 //リモートPort定義
-#define REMOTE_PORT (8000)
+#define MAX_PORT (4)
+#define REMOTE_PORT0 (8000)
+#define REMOTE_PORT1 (8001)
+#define REMOTE_PORT2 (8002)
+#define REMOTE_PORT3 (8003)
 
 //識別uriの決定
 #define IDENTIFY_URI ("test")
@@ -36,6 +45,11 @@ typedef struct {
   int body_len;
 } http_request;
 
+typedef struct {
+  const char *host;
+  int port;
+} ServerInfo
+
 // FIXME: Skippable if payload region full accessible.
 static char cbuf[BUF_MAXN] = {0};
 static int initialized = 0;
@@ -43,6 +57,14 @@ static short next_session[SESSION_MAXN];
 static int to_host[SESSION_MAXN];
 static short cli_session[BUF_MAXN];
 static short ser_session[BUF_MAXN];
+static int server_number = 0;
+ServerInfo servers[] = {{REMOTE_IP_MUC0, REMOTE_PORT0}, {REMOTE_IP_MUC1, REMOTE_PORT0},
+                        {REMOTE_IP_MUC0, REMOTE_PORT1}, {REMOTE_IP_MUC1, REMOTE_PORT1},
+                        {REMOTE_IP_MUC0, REMOTE_PORT2}, {REMOTE_IP_MUC1, REMOTE_PORT2},
+                        {REMOTE_IP_MUC0, REMOTE_PORT3}, {REMOTE_IP_MUC1, REMOTE_PORT3}
+                        }; 
+
+
 
 int parse_http(char *payload, http_request *req, int payload_size);
 char *nerd_memcpy(char *dst, char *src, int sz);
@@ -150,7 +172,7 @@ if(!initialized){
     cli_session[curr_session] = curr_session;
     //バックエンド選択
     printf("connect Remote!!\n");
-    dst = snic_connect_server(REMOTE_IP, REMOTE_PORT);
+    dst = snic_connect_server(REMOTE_IP_MUC0, REMOTE_PORT0);
     printf("connect done!!\n");
     ser_session[dst] = dst;
     next_session[curr_session] = dst;
@@ -304,4 +326,14 @@ void header_conn_close(http_request req) {
   if (flag == 0){
     strncpy(req.header_values[req.header_count], "close", MAX_HEADER_VALUE);
   }
+}
+
+short roundrobin(ServerInfo server) {
+  int length = len(server);
+  x = server_number % length;
+  char ip = server[x].host;
+  int pt = server[x].port;
+  server_number += 1;
+  short dst = snic_connect_server(ip, pt);
+  return dst;
 }
