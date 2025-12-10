@@ -69,7 +69,7 @@ ServerInfo servers[] = {{REMOTE_IP_MUC0, REMOTE_PORT0}, {REMOTE_IP_MUC1, REMOTE_
 int parse_http(char *payload, http_request *req, int payload_size);
 char *nerd_memcpy(char *dst, char *src, int sz);
 int uri_include(char *req);
-short roundrobin(ServerInfo server[]);
+ServerInfo roundrobin(ServerInfo server[]);
 //int search_session(short arr[], short target, int size);
 
 int spi_handle(header_t header, char *payload, struct trace_info *trace_info) {
@@ -173,7 +173,10 @@ if(!initialized){
     cli_session[curr_session] = curr_session;
     //バックエンド選択
     printf("connect Remote!!\n");
-    dst = roundrobin(servers);
+    ServerInfo ser_adr = roundrobin(servers);
+    printf("port:%d\n", ser_adr.port);
+    printf("ip:%s\n", ser_adr.host);
+    dst = snic_connect_server(ser_adr.host, ser_adr.port);
     printf("connect done!!\n");
     ser_session[dst] = dst;
     next_session[curr_session] = dst;
@@ -329,12 +332,11 @@ void header_conn_close(http_request req) {
   }
 }
 
-short roundrobin(ServerInfo server[]) {
-  int length = sizeof(server);
+ServerInfo roundrobin(ServerInfo server[]) {
+  int length = 2;
+  printf("length:%d\n", length);
   int x = server_number % length;
-  char *ip = server[x].host;
-  int pt = server[x].port;
+  printf("x:%d\n",x);
   server_number += 1;
-  short dst = snic_connect_server(&ip, pt);
-  return dst;
+  return server[x];
 }
