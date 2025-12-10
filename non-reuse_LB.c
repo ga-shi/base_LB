@@ -48,7 +48,7 @@ typedef struct {
 typedef struct {
   const char *host;
   int port;
-} ServerInfo
+} ServerInfo;
 
 // FIXME: Skippable if payload region full accessible.
 static char cbuf[BUF_MAXN] = {0};
@@ -58,10 +58,10 @@ static int to_host[SESSION_MAXN];
 static short cli_session[BUF_MAXN];
 static short ser_session[BUF_MAXN];
 static int server_number = 0;
-ServerInfo servers[] = {{REMOTE_IP_MUC0, REMOTE_PORT0}, {REMOTE_IP_MUC1, REMOTE_PORT0},
-                        {REMOTE_IP_MUC0, REMOTE_PORT1}, {REMOTE_IP_MUC1, REMOTE_PORT1},
-                        {REMOTE_IP_MUC0, REMOTE_PORT2}, {REMOTE_IP_MUC1, REMOTE_PORT2},
-                        {REMOTE_IP_MUC0, REMOTE_PORT3}, {REMOTE_IP_MUC1, REMOTE_PORT3}
+ServerInfo servers[] = {{REMOTE_IP_MUC0, REMOTE_PORT0}, {REMOTE_IP_MUC1, REMOTE_PORT0}
+                        // {REMOTE_IP_MUC0, REMOTE_PORT1}, {REMOTE_IP_MUC1, REMOTE_PORT1},
+                        // {REMOTE_IP_MUC0, REMOTE_PORT2}, {REMOTE_IP_MUC1, REMOTE_PORT2},
+                        // {REMOTE_IP_MUC0, REMOTE_PORT3}, {REMOTE_IP_MUC1, REMOTE_PORT3}
                         }; 
 
 
@@ -69,6 +69,7 @@ ServerInfo servers[] = {{REMOTE_IP_MUC0, REMOTE_PORT0}, {REMOTE_IP_MUC1, REMOTE_
 int parse_http(char *payload, http_request *req, int payload_size);
 char *nerd_memcpy(char *dst, char *src, int sz);
 int uri_include(char *req);
+short roundrobin(ServerInfo server[]);
 //int search_session(short arr[], short target, int size);
 
 int spi_handle(header_t header, char *payload, struct trace_info *trace_info) {
@@ -172,7 +173,7 @@ if(!initialized){
     cli_session[curr_session] = curr_session;
     //バックエンド選択
     printf("connect Remote!!\n");
-    dst = snic_connect_server(REMOTE_IP_MUC0, REMOTE_PORT0);
+    dst = roundrobin(servers);
     printf("connect done!!\n");
     ser_session[dst] = dst;
     next_session[curr_session] = dst;
@@ -328,12 +329,12 @@ void header_conn_close(http_request req) {
   }
 }
 
-short roundrobin(ServerInfo server) {
-  int length = len(server);
-  x = server_number % length;
-  char ip = server[x].host;
+short roundrobin(ServerInfo server[]) {
+  int length = sizeof(server);
+  int x = server_number % length;
+  char *ip = server[x].host;
   int pt = server[x].port;
   server_number += 1;
-  short dst = snic_connect_server(ip, pt);
+  short dst = snic_connect_server(&ip, pt);
   return dst;
 }
