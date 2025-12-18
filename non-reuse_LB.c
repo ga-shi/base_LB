@@ -63,6 +63,7 @@ ServerInfo servers[] = {{REMOTE_IP_MUC0, REMOTE_PORT0}, {REMOTE_IP_MUC1, REMOTE_
                         // {REMOTE_IP_MUC0, REMOTE_PORT2}, {REMOTE_IP_MUC1, REMOTE_PORT2},
                         // {REMOTE_IP_MUC0, REMOTE_PORT3}, {REMOTE_IP_MUC1, REMOTE_PORT3}
                         }; 
+static int servers_size = 2;
 
 
 
@@ -333,9 +334,7 @@ void header_conn_close(http_request req) {
 }
 
 ServerInfo roundrobin(ServerInfo server[]) {
-  int length = 2;
-  printf("length:%d\n", length);
-  int x = server_number % length;
+  int x = server_number % servers_size;
   printf("x:%d\n",x);
   server_number += 1;
   return server[x];
