@@ -29,6 +29,8 @@
 
 #define BUF_MAXN 2048
 #define SESSION_MAXN (1000)
+//接続するバックエンドのサーバーの総port数
+#define cli_session_number 2
 
 #define SNIC_TO_REMOTE (0)
 #define SNIC_TO_HOST (1)
@@ -53,7 +55,8 @@ typedef struct {
 // FIXME: Skippable if payload region full accessible.
 static char cbuf[BUF_MAXN] = {0};
 static int initialized = 0;
-static short next_session[SESSION_MAXN];
+static short cli_next_session[SESSION_MAXN][cli_session_number];
+static short ser_next_session[SESSION_MAXN];
 static int to_host[SESSION_MAXN];
 static short cli_session[BUF_MAXN];
 static short ser_session[BUF_MAXN];
@@ -78,9 +81,12 @@ printf("spi_handle called\n");
 //sessionを保存する配列を-1で初期化
 if(!initialized){
   for(int i = 0; i <= SESSION_MAXN; i++){
-    next_session[i] = non_session;
     cli_session[i] = non_session;
     ser_session[i] = non_session;
+    ser_next_session[i] = non_session;
+    for(int j = 0; j < cli_session_number; j++) {
+      cli_next_session[i][j] = non_session;
+    }
   }
   initialized = 1;
 }
@@ -106,12 +112,7 @@ if(!initialized){
   //printf("ctrl_mode =%d\n", header->ctrl_mode);
   //クライアントからクローズの情報を得たときにクローズする
   if (header->ctrl_mode == COM_CLOSE_REQ){
-    //printf("[WAPP] close req:%d\n",curr_session);
-    //sessionが保存されているか確認
-    //int cli = search_session(cli_session, curr_session, SESSION_MAXN);
-    //int ser = search_session(ser_session, curr_session, SESSION_MAXN);
-    //次の接続先を一時保存
-    int next = next_session[curr_session];
+    printf("[WAPP] close req:%d\n",curr_session);
     //print_all(cli_session, SESSION_MAXN);
     //どちらにも保存されていない
     if (cli_session[curr_session] != curr_session && ser_session[curr_session] != curr_session) {
@@ -121,25 +122,39 @@ if(!initialized){
     }
     //cliからのcloseリクエスト
     if (cli_session[curr_session] == curr_session) {
+      printf("close req from cli\n");
       cli_session[curr_session] = non_session;
-      //int x = search_session(ser_session, next, SESSION_MAXN);
-      ser_session[curr_session] = non_session;
+      //お互いの関係をリセット
+      for (int i = 0; i < cli_session_number; i++) {
+        snic_close_server(cli_next_session[curr_session][i]);
+        ser_session[cli_next_session[curr_session][i]] = non_session;
+        ser_next_session[cli_next_session[curr_session][i]] = non_session;
+        cli_next_session[curr_session][i] = non_session;      
+      }
       printf("session reset from cli\n");
     }
     //serからのcloseリクエスト
     if (ser_session[curr_session] == curr_session) {
+      int x = -1;
+      printf("close req from server %d\n", curr_session);
       ser_session[curr_session] = non_session;
-      //int x = search_session(cli_session, next, SESSION_MAXN);
-      cli_session[curr_session] = non_session;
+      //お互いの関係をリセット
+      //curr_sessionがcli_next_sessionのどこに保管されているか
+      for (int i = 0; i < cli_session_number; i++) {
+        if (cli_next_session[ser_next_session[curr_session]][i] == curr_session) {
+          x = i;
+        }
+      }
+      cli_next_session[ser_next_session[curr_session]][x] = non_session;
+      //cli_nextが全てなくなったら、クライアントにクローズを送信
+      if (cli_next_Iz_empty(cli_next_session, ser_next_session[curr_session])) {
+
+        snic_close_server(ser_next_session[curr_session]);
+      }
+      ser_next_session[curr_session] = non_session;
       printf("session reset from ser\n");
     }
-    //お互いの関係をリセット
-    next_session[curr_session] = non_session;
-    next_session[next] = non_session;
-    //相方のサーバーにcloseを送信
-    printf("close\n");
-    snic_close_server(next);
-    printf("close done\n");
+
     return SNIC_CLOSE_CONN;
   }
 
@@ -180,13 +195,13 @@ if(!initialized){
     dst = snic_connect_server(ser_adr.host, ser_adr.port);
     printf("connect done!!\n");
     ser_session[dst] = dst;
-    next_session[curr_session] = dst;
-    next_session[dst] = curr_session;
+    cli_next_session[curr_session][server_identify(ser_adr.host, ser_adr.port)] = dst;
+    ser_next_session[dst] = curr_session;
     printf("session associated\n");
   }
   //バックエンドからのリクエスト
   else {
-    dst = next_session[curr_session];
+    dst = ser_next_session[curr_session];
   }
   header->sessionID = dst;
   printf("Relay to remote.\n");
@@ -338,4 +353,45 @@ ServerInfo roundrobin(ServerInfo server[]) {
   printf("x:%d\n",x);
   server_number += 1;
   return server[x];
+}
+
+int server_identify(*char host, int port) {
+  if (host == REMOTE_IP_MUC0){
+    if (port == REMOTE_PORT0) {
+      return 0;
+    }
+    else if (port == REMOTE_PORT1) {
+      return 1;
+    }
+    else if (port == REMOTE_PORT2) {
+      return 2;
+    }
+    else if (port == REMOTE_PORT3) {
+      return 3;
+    }
+  }
+  else if (host == REMOTE_IP_MUC1) {
+    if (port == REMOTE_PORT0) {
+      return 4;
+    }
+    else if (port == REMOTE_PORT1) {
+      return 5;
+    }
+    else if (port == REMOTE_PORT2) {
+      return 6;
+    }
+    else if (port == REMOTE_PORT3) {
+      return 7;
+    }
+  }
+}
+
+int cli_next_Iz_empty(short arr[][], short session) {
+  for (int i = 0; i < cli_session_number; i++) {
+    if (arr[session][i] != non_session) {
+      return 0;
+    }
+  }
+
+  return 1;
 }
